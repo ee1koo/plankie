@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plankie v1.10</title>
+    <!-- 
+        MAGAZINE FLATPLAN TOOL - v1.10
+        
+        CHANGELOG (NL):
+
+        v1.10
+        - UPDATE: Excel-export bestandsnaam aangepast. Begint nu altijd met 'Plank_', gevolgd door de magazinetitel en datum (bijv. Plank_MijnMagazine_2023-10-01.xlsx).
+
+        v1.9
+        - UPDATE: Groepsvergrendeling. Bij het klikken op het slotje van een gegroepeerde pagina wordt nu automatisch het hele artikel (de hele groep) vergrendeld of ontgrendeld.
+        
+        v1.8
+        - FIX: 'Lock'-functionaliteit verbeterd (Flow-logic). Vergrendelde pagina's blijven staan, losse pagina's stromen eromheen.
+        
+        v1.7
+        - NIEUW: 'Lock'-functionaliteit toegevoegd (Visueel).
+        
+        FEATURES:
+        - Visueel Flatplan Grid (Drag & Drop)
+        - Excel Import/Export & JSON Backup
+        - Kleur labels & Groeperen
+        - Print-optimalisatie (A4)
+    -->
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel handling -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s ease; }
+
+        /* --- Themes --- */
+        body.theme-light { background-color: #cbd5e1; color: #1e293b; }
+        body.theme-dark { background-color: #0f172a; color: #f1f5f9; }
+
+        /* --- Page Card Styling --- */
+        .page-card {
+            width: 120px;
+            height: 170px;
+            transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.3s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+            background-color: white; 
+            overflow: visible; 
+            position: relative;
+            cursor: grab;
+            z-index: 10; 
+        }
+        .page-card:active { cursor: grabbing; }
+        .page-card:hover {
+            box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.25);
+            transform: translateY(-2px);
+            z-index: 2000; 
+        }
+        
+        /* LOCKED STATE */
+        .page-card.is-locked {
+            cursor: not-allowed !important;
+            border-color: #cbd5e1;
+        }
+        .page-card.is-locked .page-input {
+            pointer-events: none; 
+            color: #64748b;
+        }
+        .locked-badge {
+            position: absolute; top: 2px; right: 2px; 
+            color: #ef4444; font-size: 10px; z-index: 20;
+            background: rgba(255,255,255,0.8); border-radius: 50%; 
+            width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+        }
+
+        /* --- Ghost Page (Placeholders) --- */
+        .ghost-page {
+            width: 120px;
+            height: 170px;
+            border: 2px dashed #94a3b8;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            font-weight: 600;
+            user-select: none;
+            background-color: rgba(255,255,255,0.15);
+        }
+
+        /* --- Layers & Masks --- */
+        .card-content-mask {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            border-radius: 0.125rem; 
+            background: white;
+            z-index: 1;
+            pointer-events: none; 
+        }
+        .pointer-events-auto { pointer-events: auto !important; }
+
+        /* --- Search Dimming --- */
+        .search-dimmed .page-card:not(.search-match) {
+            opacity: 0.3;
+            transform: scale(0.95);
+            box-shadow: none;
+            z-index: 1;
+        }
+        .search-dimmed .page-card.search-match {
+            box-shadow: 0 0 0 4px #fbbf24;
+            z-index: 60;
+        }
+
+        /* --- Visual Elements --- */
+        .page-color-overlay {
+            position: absolute; inset: 0; z-index: 5; opacity: 0.4;
+            pointer-events: none; transition: background-color 0.3s ease; mix-blend-mode: multiply;
+        }
+        
+        .page-image-container {
+            position: absolute; inset: 0; z-index: 1; pointer-events: none; 
+        }
+        .page-image-container img {
+            width: 100%; height: 100%; object-fit: cover; opacity: 0.8; pointer-events: none; 
+        }
+        
+        /* A/W Indicators */
+        .page-type-letter {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-size: 80px; font-weight: 900; z-index: 7; pointer-events: none; user-select: none;
+        }
+        .indicator-a { color: #ef4444; opacity: 1; }
+        .indicator-w { color: #3b82f6; opacity: 1; }
+
+        /* --- Text Inputs --- */
+        .page-input {
+            background: transparent; border: none; resize: none;
+            width: 90%; height: 60%; font-size: 0.75rem; line-height: 1.4;
+            outline: none; text-align: center; cursor: text; overflow: hidden; 
+            color: #0f172a; position: relative; z-index: 10; font-weight: 700;
+            text-shadow: 0 1px 2px rgba(255,255,255,0.8); pointer-events: auto; 
+        }
+        .page-input:focus {
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 4px; box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.3);
+        }
+
+        /* --- Footer Controls --- */
+        .card-footer-controls {
+            position: absolute; bottom: 4px; left: 0; right: 0; height: 24px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 6px; z-index: 100; opacity: 0; transition: opacity 0.2s;
+            pointer-events: none; 
+        }
+        .page-card:hover .card-footer-controls { opacity: 1; pointer-events: auto; }
+
+        .footer-btn-wrapper { position: relative; pointer-events: auto; z-index: 3000; }
+
+        .icon-btn {
+            width: 20px; height: 20px; border-radius: 50%;
+            background: rgba(255,255,255,0.95); display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+            color: #475569; border: 1px solid #cbd5e1; transition: all 0.1s;
+        }
+        .icon-btn:hover { background: white; color: #2563eb; transform: scale(1.1); }
+        .icon-btn.active { background: #2563eb; color: white; border-color: #2563eb; font-weight: bold; }
+        .icon-btn.danger:hover { background: #fef2f2; color: #ef4444; border-color: #fca5a5; }
+        .icon-btn.locked { color: #ef4444; border-color: #fca5a5; background: #fef2f2; }
+        .icon-btn.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; filter: grayscale(1); }
+
+        /* --- Popovers (Detached) --- */
+        .popover-common {
+            position: absolute; background: white; border: 1px solid #cbd5e1;
+            padding: 6px; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            z-index: 3001; max-height: 300px; overflow-y: auto; pointer-events: auto; 
+        }
+
+        .color-popover, .rubriek-color-popover {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; width: 106px;
+        }
+        
+        .delete-popover { width: 160px; display: flex; flex-direction: column; gap: 2px; }
+        .delete-popover button {
+            text-align: left; padding: 6px 8px; font-size: 11px; border-radius: 4px;
+            transition: background 0.1s; display: flex; align-items: center; gap: 8px; width: 100%;
+            color: #334155; font-weight: 500;
+        }
+        .delete-popover button:hover { background-color: #f1f5f9; color: #0f172a; }
+        .delete-popover button.danger { color: #dc2626; margin-top: 4px; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+        .delete-popover button.danger:hover { background-color: #fef2f2; color: #b91c1c; }
+
+
+        /* Rubriek Picker Button Positioning */
+        .rubriek-color-picker-wrapper {
+             position: absolute; right: 0; top: 0; height: 18px; width: 24px;
+             z-index: 2001; display: flex; align-items: center; justify-content: center;
+             opacity: 0; transition: opacity 0.2s ease;
+        }
+        .page-card:hover .rubriek-color-picker-wrapper { opacity: 1; }
+        
+        /* Popover Positioning Classes */
+        .popover-open-up { transform: translateY(-100%); }
+        .popover-open-down { transform: translateY(0%); } 
+
+        /* Popover Arrows */
+        .popover-common::after {
+            content: ''; position: absolute; width: 8px; height: 8px;
+            background: white; transform: rotate(45deg);
+        }
+        /* Centered Arrow (Footer) */
+        .color-popover.popover-open-up::after, .delete-popover.popover-open-up::after { bottom: -4px; left: 50%; transform: translateX(-50%) rotate(45deg); border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+        .color-popover.popover-open-down::after, .delete-popover.popover-open-down::after { top: -4px; left: 50%; transform: translateX(-50%) rotate(45deg); border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; }
+        /* Right Aligned Arrow (Rubriek) */
+        .rubriek-color-popover.popover-open-up::after { bottom: -4px; right: 8px; transform: rotate(45deg); border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+        .rubriek-color-popover.popover-open-down::after { top: -4px; right: 8px; transform: rotate(45deg); border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; }
+
+        .color-popover::-webkit-scrollbar { width: 4px; }
+        .color-popover::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+        .color-swatch {
+            width: 20px; height: 20px; border-radius: 3px; cursor: pointer; border: 1px solid rgba(0,0,0,0.1);
+        }
+        .color-swatch:hover { transform: scale(1.15); border-color: rgba(0,0,0,0.3); z-index: 10; }
+
+        /* --- Drag & Drop --- */
+        .dragging { opacity: 0.2; }
+        .drop-before::before { content: ''; position: absolute; left: -6px; top: 0; bottom: 0; width: 4px; background-color: #4f46e5; border-radius: 2px; z-index: 50; pointer-events: none; }
+        .drop-after::after { content: ''; position: absolute; right: -6px; top: 0; bottom: 0; width: 4px; background-color: #4f46e5; border-radius: 2px; z-index: 50; pointer-events: none; }
+        .file-drag-over { border: 2px dashed #4f46e5 !important; background-color: #e0e7ff !important; }
+
+        /* --- Selection Mode --- */
+        .mode-selecting .page-card { cursor: pointer !important; }
+        .selection-overlay { display: none; pointer-events: auto; }
+        .mode-selecting .selection-overlay { display: flex; cursor: pointer; }
+        .is-selected { ring: 4px solid #4f46e5; transform: scale(0.96); }
+        .check-icon { opacity: 0; transform: scale(0.5); transition: all 0.2s; }
+        .is-selected .check-icon { opacity: 1; transform: scale(1); }
+
+        /* --- Article Bar (Rubriek) --- */
+        .article-bar { 
+            position: absolute; top: 0; left: 0; right: 0; height: 18px; 
+            padding: 0; z-index: 15; pointer-events: auto; display: block;
+            font-size: 0.6rem; font-weight: 700; color: #000000; 
+            text-shadow: 0 0 1px rgba(255,255,255,0.5); overflow: visible; white-space: nowrap;
+        }
+        
+        .rubriek-input {
+            background: transparent; border: none; resize: none;
+            position: absolute; left: 0; top: 0; width: 100%; height: 100%;     
+            font-size: 0.6rem; line-height: 18px; outline: none; text-align: center; 
+            cursor: text; padding: 0 24px; color: #000000; font-weight: 700;
+            text-shadow: 0 0 1px rgba(255,255,255,0.5); pointer-events: auto;
+            overflow: hidden; white-space: nowrap;
+        }
+        .rubriek-input::placeholder { color: rgba(0,0,0,0.5); }
+        .rubriek-input:focus { background-color: rgba(255, 255, 255, 0.7); }
+
+        .spine-shadow { width: 2px; height: 170px; background: linear-gradient(to right, rgba(0,0,0,0.05), rgba(0,0,0,0.2), rgba(0,0,0,0.05)); }
+
+        #notificationToast {
+            position: fixed; bottom: 20px; right: 20px; background: #1e293b; color: white;
+            padding: 12px 20px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            transform: translateY(100px); opacity: 0; transition: all 0.3s ease; z-index: 100;
+            display: flex; align-items: center; gap: 10px; font-size: 0.9rem;
+        }
+        #notificationToast.show { transform: translateY(0); opacity: 1; }
+
+        ::-webkit-scrollbar { width: 12px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+
+        /* --- PRINT OPTIMIZATION (A4) --- */
+        @media print {
+            @page { size: A4 portrait; margin: 6mm; }
+            body { background-color: white !important; color: black !important; overflow: visible !important; height: auto !important; margin: 0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            header, footer, #selectionActions, .card-footer-controls, ::-webkit-scrollbar, .hidden-print, #notificationToast, .color-popover, .delete-popover { display: none !important; }
+            #mainArea { background: white !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; box-shadow: none !important; display: block !important; }
+            #flatplanContainer { display: flex !important; flex-wrap: wrap !important; justify-content: flex-start !important; align-content: flex-start !important; gap: 4px !important; padding: 0 !important; margin: 0 !important; width: 100% !important; transform: none !important; }
+            .spread-container { break-inside: avoid; page-break-inside: avoid; margin-bottom: 4px !important; margin-right: 4px !important; }
+            .spine-shadow { display: none !important; }
+            .page-card { width: 48px !important; height: 68px !important; box-shadow: none !important; border: 1px solid #999 !important; border-radius: 1px !important; }
+            
+            /* GHOST PAGE IN PRINT: Takes up space but is invisible */
+            .ghost-page { 
+                display: block !important; 
+                width: 48px !important; 
+                height: 68px !important; 
+                border: none !important; 
+                background: transparent !important; 
+                opacity: 0 !important;
+                color: transparent !important;
+            }
+            .locked-badge { display: none !important; }
+            .page-input { font-size: 7px !important; line-height: 1.1 !important; color: #000 !important; padding: 1px !important; overflow: hidden !important; font-weight: 600 !important; }
+            .article-bar { height: 8px !important; font-size: 5px !important; padding: 0 !important; color: #000000 !important; pointer-events: none !important; }
+            .rubriek-input { font-size: 5px !important; padding: 0 1px !important; line-height: 8px !important; background: transparent !important; }
+            .page-num-label { font-size: 8px !important; margin-bottom: 1px !important; color: #000 !important; font-weight: bold !important; }
+            .page-type-letter { font-size: 24px !important; opacity: 1 !important; }
+        }
+    </style>
+	<script src="hamburger.js"></script>
+</head>
+<body class="theme-light h-screen flex flex-col overflow-hidden select-none">
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700 px-6 py-3 flex items-center justify-between shadow-md z-20 shrink-0 transition-colors">
+        <div class="flex items-center gap-4">
+            <div class="bg-indigo-600 text-white p-2 rounded-lg shadow-sm">
+                <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div>
+                <input type="text" id="magTitle" class="font-bold text-slate-800 dark:text-white text-lg outline-none border-b border-transparent focus:border-indigo-500 bg-transparent placeholder-slate-300 w-48 transition-colors" placeholder="Naam Magazine...">
+            </div>
+            <div class="relative hidden md:block">
+                <i class="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" oninput="handleSearch(this.value)" class="pl-8 pr-4 py-1.5 text-sm bg-slate-100 dark:bg-slate-700 border border-transparent focus:border-indigo-500 rounded-full outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 w-48 transition-all focus:w-64" placeholder="Zoeken...">
+            </div>
+        </div>
+
+        <div id="selectionActions" class="hidden flex items-center gap-3 bg-indigo-50 border border-indigo-200 px-4 py-1.5 rounded-lg animate-fade-in shadow-sm">
+            <span class="text-xs font-bold text-indigo-700 uppercase tracking-wide" id="selectionCount">0 geselecteerd</span>
+            <div class="h-4 w-px bg-indigo-200"></div>
+            <button onclick="groupSelected()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded transition flex items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-link"></i> Groep / Artikel
+            </button>
+            <button onclick="ungroupSelected()" class="text-xs bg-white hover:bg-red-50 text-red-500 border border-red-200 px-3 py-1 rounded transition flex items-center gap-2 shadow-sm">
+                <i class="fa-solid fa-unlink"></i> Losmaken
+            </button>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <!-- Group 1: Backup (Blue) -->
+            <div class="flex items-center bg-blue-50 dark:bg-slate-700 rounded-lg p-1 border border-blue-100 dark:border-slate-600">
+                <button onclick="exportProject()" class="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 transition" title="Backup Maken">
+                    <i class="fa-solid fa-file-export"></i>
+                </button>
+                <div class="w-px h-4 bg-blue-200 dark:bg-slate-600 mx-1"></div>
+                <button onclick="document.getElementById('importInput').click()" class="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 transition" title="Backup Laden">
+                    <i class="fa-solid fa-file-import"></i>
+                </button>
+                <input type="file" id="importInput" class="hidden" accept=".json" onchange="importProject(this)">
+            </div>
+            
+            <div class="h-8 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+            <!-- Group 2: Excel (Green) -->
+            <div class="flex items-center bg-emerald-50 dark:bg-slate-700 rounded-lg p-1 border border-emerald-100 dark:border-slate-600">
+                <button onclick="document.getElementById('excelImportInput').click()" class="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 transition px-2 py-1" title="Artikellijst Importeren (.csv/.xlsx)">
+                    <i class="fa-solid fa-file-csv"></i>
+                </button>
+                <input type="file" id="excelImportInput" class="hidden" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onchange="importArticleList(this)">
+                <div class="w-px h-4 bg-emerald-200 dark:bg-slate-600 mx-1"></div>
+                <button onclick="exportVisualExcel()" class="text-emerald-600 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 transition px-2 py-1" title="Excel Export (.xlsx)">
+                    <i class="fa-solid fa-file-excel"></i>
+                </button>
+            </div>
+            
+            <div class="h-8 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+            <!-- Group 3: PDF / Delete (Red) -->
+            <div class="flex items-center bg-red-50 dark:bg-slate-700 rounded-lg p-1 border border-red-100 dark:border-slate-600">
+                <button onclick="printPlan()" class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition px-2 py-1" title="PDF Export (A4)">
+                    <i class="fa-solid fa-file-pdf"></i>
+                </button>
+                <div class="w-px h-4 bg-red-200 dark:bg-slate-600 mx-1"></div>
+                <button onclick="resetPlan()" class="text-red-400 hover:text-red-600 transition px-2 py-1" title="Alles wissen">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+
+            <div class="h-8 w-px bg-slate-300 dark:bg-slate-600"></div>
+
+            <!-- Group 4: Tools (Neutral) -->
+            <div class="flex items-center bg-slate-100 dark:bg-slate-700 rounded-lg p-1 border border-slate-200 dark:border-slate-600">
+                <button onclick="undo()" id="undoBtn" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 px-2 py-1 disabled:opacity-30 disabled:cursor-not-allowed" title="Ongedaan maken">
+                    <i class="fa-solid fa-rotate-left"></i>
+                </button>
+                <div class="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+                <button onclick="redo()" id="redoBtn" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 px-2 py-1 disabled:opacity-30 disabled:cursor-not-allowed" title="Opnieuw">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+
+            <button onclick="toggleTheme()" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition p-2" title="Wissel licht/donker">
+                <i class="fa-solid fa-moon hidden dark:inline"></i>
+                <i class="fa-solid fa-sun inline dark:hidden"></i>
+            </button>
+
+            <button id="selectModeBtn" onclick="toggleSelectionMode()" class="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 shadow-sm transition">
+                <i class="fa-regular fa-square-check"></i>
+                Selecteren
+            </button>
+
+            <div class="flex items-center gap-2">
+                <label class="text-sm text-slate-600 dark:text-slate-300">Pagina's:</label>
+                <input type="number" id="pageCountInput" value="116" min="4" step="2" onchange="updatePageCount()" class="w-16 px-2 py-1 text-center text-sm border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white rounded focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm">
+            </div>
+            
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-8 transition-colors shadow-inner" id="mainArea" ondragover="handleAutoScroll(event)">
+        <!-- Changed justify-center to justify-start to fix last row alignment -->
+        <div id="flatplanContainer" class="max-w-[1400px] mx-auto flex flex-wrap content-start gap-y-8 gap-x-2 pb-20 justify-start">
+            <!-- Content generated by JS -->
+        </div>
+    </main>
+
+    <div id="notificationToast">
+        <i class="fa-solid fa-circle-info text-blue-400"></i>
+        <span id="toastMessage">Melding</span>
+    </div>
+
+    <!-- Templates for Detached Popovers (They remain hidden until needed) -->
+    <template id="colorPopoverTemplate">
+        <div class="popover-common color-popover hidden" style="position: absolute;">
+            <!-- Swatches will be injected by JS -->
+        </div>
+    </template>
+    <template id="rubriekColorPopoverTemplate">
+        <div class="popover-common rubriek-color-popover hidden" style="position: absolute;">
+            <!-- Swatches will be injected by JS -->
+        </div>
+    </template>
+    
+    <!-- NEW: Delete Popover Template -->
+    <template id="deletePopoverTemplate">
+        <div class="popover-common delete-popover hidden" style="position: absolute;">
+            <!-- Buttons will be injected by JS -->
+        </div>
+    </template>
+
+    <footer class="bg-white dark:bg-slate-800 border-t border-slate-300 dark:border-slate-700 px-6 py-2 text-xs text-slate-600 dark:text-slate-400 flex justify-between items-center shrink-0 shadow-lg z-10 transition-colors">
+        <div id="statsDisplay" class="flex gap-4">Laden...</div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-1">
+                <i class="fa-solid fa-image text-indigo-500"></i>
+                <span>Sleep afbeeldingen</span>
+            </div>
+            <div class="h-3 w-px bg-slate-300 dark:bg-slate-600"></div>
+            <div class="flex items-center gap-1">
+                <i class="fa-solid fa-font text-indigo-500"></i>
+                <span>Gebruik A/W voor Ad/Werf</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // --- Configuration ---
+        const PALETTE_COLORS = [
+            'transparent', '#ffffff', '#cbd5e1', '#64748b', // Neutrals
+            '#000000', '#713f12', '#78350f', '#451a03', // Darks/Browns
+            '#fca5a5', '#f87171', '#ef4444', '#b91c1c', // Reds
+            '#fdba74', '#fb923c', '#f97316', '#c2410c', // Oranges
+            '#fcd34d', '#fbbf24', '#f59e0b', '#b45309', // Yellows/Ambers
+            '#86efac', '#4ade80', '#22c55e', '#15803d', // Greens
+            '#67e8f9', '#22d3ee', '#06b6d4', '#0e7490', // Cyans/Teals
+            '#93c5fd', '#60a5fa', '#3b82f6', '#1d4ed8', // Blues
+            '#c4b5fd', '#a78bfa', '#8b5cf6', '#6d28d9', // Purples
+            '#f9a8d4', '#f472b6', '#ec4899', '#be185d'  // Pinks
+        ];
+        const GROUP_COLORS = ['#fca5a5', '#fdba74', '#fcd34d', '#86efac', '#67e8f9', '#93c5fd', '#c4b5fd', '#f9a8d4'];
+
+        // --- State ---
+        let state = { title: '', pageList: [], theme: 'light' };
+        
+        const MAX_HISTORY = 50;
+        let historyStack = [];
+        let historyIndex = -1;
+        let isUndoRedoAction = false; 
+        
+        let activePopovers = new Map(); 
+
+        let isSelectionMode = false;
+        let selectedIndices = new Set();
+        let draggedIndex = null;
+        let dropTargetIndex = null;
+        let dropPosition = null; 
+        let currentSearchTerm = '';
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('notificationToast');
+            const msgEl = document.getElementById('toastMessage');
+            const icon = toast.querySelector('i');
+            msgEl.innerText = msg;
+            icon.className = isError ? 'fa-solid fa-circle-exclamation text-red-400' : 'fa-solid fa-circle-check text-green-400';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // --- Init ---
+        function init() {
+            const saved = localStorage.getItem('magazineFlatplan_v9'); 
+            if (saved) {
+                state = JSON.parse(saved);
+                state.pageList.forEach(p => {
+                    if (!p.color) p.color = 'transparent';
+                    if (!p.groupId) p.groupId = null;
+                    if (!p.groupRubriek) p.groupRubriek = ''; 
+                    if (!p.groupColor) p.groupColor = GROUP_COLORS[0]; 
+                    if (!p.image) p.image = null; 
+                    if (!p.pageType) p.pageType = 'standard';
+                    if (p.locked === undefined) p.locked = false; // Add locked prop if missing
+                });
+            } else {
+                generatePages(116);
+            }
+            if(!state.theme) state.theme = 'light';
+            
+            // Check for URL Parameter ?p=xx
+            const urlParams = new URLSearchParams(window.location.search);
+            const paramPages = parseInt(urlParams.get('p'));
+            if (!isNaN(paramPages) && paramPages > 0) {
+                // If param exists, force page count to match
+                if (state.pageList.length !== paramPages) {
+                    generatePages(paramPages);
+                }
+            }
+
+            document.body.className = `theme-${state.theme} h-screen flex flex-col overflow-hidden select-none`;
+            document.getElementById('magTitle').value = state.title || '';
+            document.getElementById('pageCountInput').value = state.pageList.length;
+            
+            document.addEventListener('click', (e) => {
+                let clickedOnPopover = false;
+                activePopovers.forEach(popover => {
+                    if (popover.contains(e.target) || e.target.closest('.icon-btn')) {
+                        clickedOnPopover = true;
+                    }
+                });
+
+                if (!clickedOnPopover && activePopovers.size > 0) {
+                    closeAllPopovers();
+                }
+            });
+
+            pushToHistory();
+            render();
+            updateUndoRedoButtons();
+            updateStats(); 
+        }
+        
+        // --- Popover Logic ---
+        function closeAllPopovers() {
+            activePopovers.forEach(popover => {
+                popover.classList.add('hidden');
+                popover.remove(); 
+            });
+            activePopovers.clear();
+        }
+
+        function handleSwatchClick(e, swatchEl) {
+            e.stopPropagation(); 
+            const popover = swatchEl.closest('.popover-common');
+            if (!popover) return;
+            
+            const index = parseInt(popover.dataset.index);
+            const type = popover.dataset.type;
+            const color = swatchEl.dataset.color;
+
+            if (isNaN(index) || !color) return;
+
+            if (type === 'page') selectColor(index, color);
+            else if (type === 'rubriek') selectRubriekColor(index, color);
+        }
+
+        function setupDetachedPopover(index, type, buttonEl) {
+            closeAllPopovers();
+
+            let templateId;
+            if(type === 'delete') templateId = 'deletePopoverTemplate';
+            else templateId = type === 'page' ? 'colorPopoverTemplate' : 'rubriekColorPopoverTemplate';
+            
+            const popoverTemplate = document.getElementById(templateId);
+            const popover = popoverTemplate.content.firstElementChild.cloneNode(true);
+            popover.id = `${type}-popover-${index}`;
+            popover.dataset.index = index;
+            popover.dataset.type = type;
+
+            if (type === 'delete') {
+                const page = state.pageList[index];
+                const isGrouped = !!page.groupId;
+                
+                let html = `
+                    <button onclick="handleDeleteAction(${index}, 'clear')">
+                        <i class="fa-solid fa-eraser text-slate-400"></i> Pagina leegmaken
+                    </button>
+                `;
+                
+                if (isGrouped) {
+                     html += `
+                    <button onclick="handleDeleteAction(${index}, 'clearGroup')">
+                        <i class="fa-solid fa-layer-group text-slate-400"></i> Artikel wissen
+                    </button>`;
+                }
+                
+                html += `
+                    <button class="danger" onclick="handleDeleteAction(${index}, 'deleteSlot')">
+                        <i class="fa-solid fa-trash text-red-400"></i> Pagina verwijderen
+                    </button>
+                `;
+                popover.innerHTML = html;
+            } else {
+                popover.innerHTML = PALETTE_COLORS.map(c => `
+                    <div class="color-swatch" style="background-color: ${c};" onclick="handleSwatchClick(event, this)" data-color="${c}" title="${c}"></div>
+                `).join('');
+            }
+            
+            // Positioning Logic
+            const buttonRect = buttonEl.getBoundingClientRect();
+            const mainArea = document.getElementById('mainArea');
+            const mainRect = mainArea.getBoundingClientRect();
+            let positionClass = 'popover-open-up'; 
+            
+            if (type === 'rubriek') {
+                 if (buttonRect.bottom + popover.offsetHeight > window.innerHeight - 20) positionClass = 'popover-open-up';
+                 else positionClass = 'popover-open-down';
+            } else {
+                 if (buttonRect.top - popover.offsetHeight < mainRect.top + 20) positionClass = 'popover-open-down'; 
+                 else positionClass = 'popover-open-up'; 
+            }
+            popover.classList.add(positionClass);
+            popover.style.position = 'fixed';
+
+            if (type === 'rubriek') {
+                popover.style.left = `${buttonRect.right - popover.offsetWidth - 2}px`; 
+                if (positionClass === 'popover-open-down') popover.style.top = `${buttonRect.top + buttonRect.height + 4}px`;
+                else popover.style.top = `${buttonRect.top - popover.offsetHeight - 4}px`;
+            } else {
+                popover.style.left = `${buttonRect.left + (buttonRect.width / 2) - (popover.offsetWidth / 2)}px`;
+                if (positionClass === 'popover-open-down') popover.style.top = `${buttonRect.top + buttonRect.height + 4}px`;
+                else popover.style.top = `${buttonRect.top - popover.offsetHeight - 4}px`;
+            }
+
+            document.body.appendChild(popover);
+            popover.classList.remove('hidden');
+            activePopovers.set(index + type, popover);
+            return popover;
+        }
+        
+        function toggleRubriekColorPopover(index, event) {
+            event.stopPropagation();
+            const buttonEl = event.currentTarget;
+            if (activePopovers.has(index + 'rubriek')) { closeAllPopovers(); return; }
+            setupDetachedPopover(index, 'rubriek', buttonEl);
+        }
+        
+        function toggleDeletePopover(index, event) {
+            event.stopPropagation();
+            const buttonEl = event.currentTarget;
+            if (activePopovers.has(index + 'delete')) { closeAllPopovers(); return; }
+            setupDetachedPopover(index, 'delete', buttonEl);
+        }
+
+        function toggleColorPopover(index, event) {
+            event.stopPropagation();
+            const buttonEl = event.currentTarget;
+            if (activePopovers.has(index + 'page')) { closeAllPopovers(); return; }
+            setupDetachedPopover(index, 'page', buttonEl);
+        }
+
+        function selectRubriekColor(index, color) { updatePageGroupColor(index, color); closeAllPopovers(); }
+        function selectColor(index, color) { updatePageColor(index, color); closeAllPopovers(); }
+        
+        function updatePageGroupColor(index, colorHex) {
+            const page = state.pageList[index];
+            if (!page.groupId) return; 
+            state.pageList.forEach((p) => { if (p.groupId === page.groupId) p.groupColor = colorHex; });
+            saveState(); render();
+        }
+
+        function updatePageColor(index, colorHex) {
+            const page = state.pageList[index];
+            if (page.groupId) {
+                state.pageList.forEach((p, idx) => { if (p.groupId === page.groupId) p.color = colorHex; });
+            } else page.color = colorHex;
+            saveState(); render();
+        }
+        
+        // --- LOCK Logic ---
+        function toggleLock(index) {
+            const page = state.pageList[index];
+            // Toggle the state based on the clicked page
+            const newLockedState = !page.locked;
+            
+            if (page.groupId) {
+                // If grouped, apply to all pages with same groupId
+                let count = 0;
+                state.pageList.forEach(p => {
+                    if (p.groupId === page.groupId) {
+                        p.locked = newLockedState;
+                        count++;
+                    }
+                });
+                showToast(newLockedState ? `Artikel vergrendeld (${count} pag.)` : "Artikel ontgrendeld");
+            } else {
+                // Single page
+                page.locked = newLockedState;
+            }
+            
+            saveState();
+            render();
+        }
+
+        // --- DELETE Logic ---
+        function clearPageData(page) {
+            page.content = '';
+            page.color = 'transparent';
+            page.image = null;
+            page.pageType = 'standard';
+            page.groupId = null;
+            page.groupColor = GROUP_COLORS[0];
+            page.groupRubriek = '';
+        }
+
+        function handleDeleteAction(index, action) {
+            if (state.pageList[index].locked) { showToast("Pagina is vergrendeld!", true); return; }
+            closeAllPopovers();
+            
+            if (action === 'clear') {
+                // Clear single page
+                clearPageData(state.pageList[index]);
+                saveState(); render();
+                showToast("Pagina leeggemaakt");
+            } else if (action === 'clearGroup') {
+                // Clear all in group
+                const groupId = state.pageList[index].groupId;
+                if (!groupId) return;
+                
+                if (confirm("Weet je zeker dat je het hele artikel wilt wissen?")) {
+                    state.pageList.forEach(p => {
+                        if (p.groupId === groupId) clearPageData(p);
+                    });
+                    saveState(); render();
+                    showToast("Artikel gewist");
+                }
+            } else if (action === 'deleteSlot') {
+                // Delete physical page (shift array)
+                if (confirm("LET OP: Hiermee verwijder je de pagina uit het grid en schuiven alle volgende pagina's op. Weet je het zeker?")) {
+                    state.pageList.splice(index, 1);
+                    document.getElementById('pageCountInput').value = state.pageList.length;
+                    saveState(); render();
+                    showToast("Pagina verwijderd");
+                }
+            }
+        }
+
+        // --- Undo/Redo ---
+        function pushToHistory() {
+            if (isUndoRedoAction) return;
+            if (historyIndex < historyStack.length - 1) historyStack = historyStack.slice(0, historyIndex + 1);
+            historyStack.push(JSON.parse(JSON.stringify(state)));
+            if (historyStack.length > MAX_HISTORY) historyStack.shift(); else historyIndex++;
+            updateUndoRedoButtons();
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                isUndoRedoAction = true; historyIndex--;
+                restoreFromHistory();
+                showToast("Ongedaan gemaakt");
+            }
+        }
+
+        function redo() {
+            if (historyIndex < historyStack.length - 1) {
+                isUndoRedoAction = true; historyIndex++;
+                restoreFromHistory();
+                showToast("Opnieuw uitgevoerd");
+            }
+        }
+
+        function restoreFromHistory() {
+            state = JSON.parse(JSON.stringify(historyStack[historyIndex]));
+            document.body.className = `theme-${state.theme} h-screen flex flex-col overflow-hidden select-none`;
+            document.getElementById('magTitle').value = state.title || '';
+            document.getElementById('pageCountInput').value = state.pageList.length;
+            saveState(false); render(); isUndoRedoAction = false; updateUndoRedoButtons();
+        }
+
+        function updateUndoRedoButtons() {
+            document.getElementById('undoBtn').disabled = historyIndex <= 0;
+            document.getElementById('redoBtn').disabled = historyIndex >= historyStack.length - 1;
+        }
+
+        // --- Core ---
+        function generatePages(count) {
+            pushToHistory();
+            const currentLength = state.pageList.length;
+            if (count > currentLength) {
+                for (let i = 0; i < count - currentLength; i++) {
+                    state.pageList.push({ 
+                        id: 'p' + Date.now() + Math.random(), 
+                        color: 'transparent', content: '', groupId: null, groupColor: GROUP_COLORS[0], image: null, pageType: 'standard', groupRubriek: '', locked: false
+                    });
+                }
+                if (currentLength === 0) {
+                    state.pageList[0].color = '#4ade80';
+                    state.pageList[0].content = 'COVER';
+                }
+            } else if (count < currentLength) {
+                state.pageList = state.pageList.slice(0, count);
+            }
+            saveState();
+        }
+
+        function saveState(shouldPush = true) {
+            if (shouldPush) pushToHistory();
+            state.title = document.getElementById('magTitle').value;
+            localStorage.setItem('magazineFlatplan_v9', JSON.stringify(state));
+            updateStats();
+        }
+
+        function updateStats() {
+            const total = state.pageList.length;
+            const filled = state.pageList.filter(p => (p.color !== 'transparent' && p.color !== '#ffffff') || p.content.trim() !== '' || p.image || p.pageType !== 'standard').length;
+            const ads = state.pageList.filter(p => p.pageType === 'ad').length;
+            const werf = state.pageList.filter(p => p.pageType === 'werf').length;
+            document.getElementById('statsDisplay').innerHTML = 
+                `<span>Totaal: <b>${total}</b></span><span class="text-slate-300">|</span><span>Vulling: <b>${Math.round((filled/total)*100)}%</b></span><span class="text-slate-300">|</span><span class="text-indigo-600 dark:text-indigo-400 font-bold">Advertenties: ${ads}</span><span class="text-slate-300">|</span><span class="text-pink-600 dark:text-pink-400 font-bold">Werf: ${werf}</span>`;
+        }
+
+        function setPageType(index, type) {
+            if (state.pageList[index].locked) { showToast("Pagina is vergrendeld!", true); return; }
+            const current = state.pageList[index].pageType;
+            state.pageList[index].pageType = (current === type) ? 'standard' : type;
+            saveState();
+            render();
+        }
+
+        function toggleTheme() {
+            state.theme = state.theme === 'light' ? 'dark' : 'light';
+            document.body.className = `theme-${state.theme} h-screen flex flex-col overflow-hidden select-none`;
+            saveState();
+        }
+
+        function printPlan() { window.print(); }
+
+        function handleSearch(query) {
+            currentSearchTerm = query.toLowerCase();
+            const main = document.getElementById('mainArea');
+            if (currentSearchTerm.length > 0) main.classList.add('search-dimmed');
+            else main.classList.remove('search-dimmed');
+            render();
+        }
+
+        // --- JSON Export/Import (Backup) ---
+        function exportProject() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            const dateStr = new Date().toISOString().slice(0,10);
+            const titleSlug = state.title ? state.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'flatplan';
+            downloadAnchorNode.setAttribute("download", `${titleSlug}_backup_${dateStr}.json`);
+            document.body.appendChild(downloadAnchorNode); // required for firefox
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function importProject(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const loadedState = JSON.parse(e.target.result);
+                    // Basic validation
+                    if (!loadedState.pageList) throw new Error("Ongeldig bestand");
+                    
+                    state = loadedState;
+                    // Restore UI
+                    document.getElementById('magTitle').value = state.title || '';
+                    document.getElementById('pageCountInput').value = state.pageList.length;
+                    if (state.theme) {
+                        document.body.className = `theme-${state.theme} h-screen flex flex-col overflow-hidden select-none`;
+                    }
+                    saveState();
+                    render();
+                    showToast("Backup succesvol geladen!");
+                } catch (err) {
+                    showToast("Fout bij laden backup", true);
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+            input.value = ''; // Reset input
+        }
+
+
+        // --- Excel Export ---
+        function exportVisualExcel() {
+            if (typeof XLSX === 'undefined') { showToast("Excel module laden...", true); return; }
+            const wb = XLSX.utils.book_new();
+            const title = state.title || "Flatplan";
+            const ws = {};
+            const range = { s: { c: 0, r: 0 }, e: { c: 0, r: 0 } };
+            const colWidths = []; 
+            const rowHeights = [];
+
+            const BOARD_BG_COLOR = "CBD5E1"; 
+            const boardBgStyle = { fill: { fgColor: { rgb: BOARD_BG_COLOR } } };
+            
+            function addCell(r, c, val, style) {
+                const cellRef = XLSX.utils.encode_cell({c, r});
+                ws[cellRef] = { v: val, t: 's', s: style };
+                if (r > range.e.r) range.e.r = r;
+                if (c > range.e.c) range.e.c = c;
+            }
+
+            // Header
+            addCell(0, 0, title, { 
+                font: { bold: true, sz: 16, color: { rgb: "1E293B" } }, 
+                fill: { fgColor: { rgb: "FFFFFF" } },
+                alignment: { horizontal: "left", vertical: "center" }
+            });
+            rowHeights[0] = { hpx: 40 };
+            
+            // Grid Setup
+            let r = 1; let c = 0;
+            const pagesPerRow = 8; 
+            const pages = state.pageList;
+            const total = pages.length;
+            const cardBaseStyle = {
+                border: { top: { style: "thin", color: { rgb: "94A3B8" } }, bottom: { style: "thin", color: { rgb: "94A3B8" } }, left: { style: "thin", color: { rgb: "94A3B8" } }, right: { style: "thin", color: { rgb: "94A3B8" } } },
+                alignment: { vertical: "center", horizontal: "center", wrapText: true },
+                font: { sz: 11, bold: true, color: { rgb: "0F172A" } }
+            };
+            const maxCols = (pagesPerRow * 2) + 1; 
+
+            function fillRowGray(rowIndex) { for(let ci=0; ci<maxCols; ci++) addCell(rowIndex, ci, "", boardBgStyle); }
+
+            fillRowGray(r); rowHeights[r] = { hpx: 20 }; r++;
+
+            let pIdx = 0;
+            while (pIdx < total) {
+                rowHeights[r] = { hpx: 150 };
+                c = 0;
+                addCell(r, c, "", boardBgStyle); if(!colWidths[c]) colWidths[c] = { wch: 3 }; c++;
+
+                for (let i = 0; i < pagesPerRow; i++) {
+                    if (pIdx >= total) {
+                        addCell(r, c, "", boardBgStyle); if(!colWidths[c]) colWidths[c] = { wch: 18 }; c++;
+                        if (i < pagesPerRow - 1) { addCell(r, c, "", boardBgStyle); if(!colWidths[c]) colWidths[c] = { wch: 2 }; c++; }
+                        continue;
+                    }
+
+                    const p = pages[pIdx];
+                    const pNum = pIdx + 1;
+                    let bgColor = "FFFFFF";
+                    if (p.color && p.color !== 'transparent') bgColor = p.color.replace('#', '').toUpperCase();
+
+                    let cellText = "";
+                    let currentCellStyle = { ...cardBaseStyle, fill: { fgColor: { rgb: bgColor } } };
+
+                    if (p.pageType === 'ad') {
+                        cellText = "A"; currentCellStyle.font = { sz: 72, bold: true, color: { rgb: "EF4444" } };
+                    } else if (p.pageType === 'werf') {
+                        cellText = "W"; currentCellStyle.font = { sz: 72, bold: true, color: { rgb: "3B82F6" } };
+                    } else {
+                        let cellTextContent = p.content || "";
+                        if (p.groupRubriek) cellTextContent = `(${p.groupRubriek})\n${cellTextContent}`;
+                        cellText = `P.${pNum}\n${cellTextContent}`.trim();
+                        currentCellStyle.font = { sz: 11, bold: true, color: { rgb: "0F172A" } };
+                    }
+
+                    addCell(r, c, cellText, currentCellStyle);
+                    if(!colWidths[c]) colWidths[c] = { wch: 18 }; c++;
+                    if (i < pagesPerRow - 1) { addCell(r, c, "", boardBgStyle); if(!colWidths[c]) colWidths[c] = { wch: 2 }; c++; }
+                    pIdx++;
+                }
+
+                addCell(r, c, "", boardBgStyle); if(!colWidths[c]) colWidths[c] = { wch: 3 }; 
+                r++; rowHeights[r] = { hpx: 20 }; fillRowGray(r); r++;
+            }
+
+            for(let i=1; i<maxCols; i++) addCell(0, i, "", { fill: { fgColor: { rgb: "FFFFFF" } } });
+            ws['!ref'] = XLSX.utils.encode_range(range); ws['!cols'] = colWidths; ws['!rows'] = rowHeights;
+            XLSX.utils.book_append_sheet(wb, ws, "Flatplan");
+            const dateStr = new Date().toISOString().slice(0,10);
+            
+            // Modified per request v1.10: Start with 'Plank', then title
+            const titleSlug = state.title ? state.title.replace(/[^a-z0-9]/gi, '_') : 'Naamloos';
+            XLSX.writeFile(wb, `Plank_${titleSlug}_${dateStr}.xlsx`);
+        }
+
+        function updatePageColor(index, colorHex) {
+            const page = state.pageList[index];
+            if (page.groupId) {
+                state.pageList.forEach((p, idx) => { if (p.groupId === page.groupId) p.color = colorHex; });
+            } else page.color = colorHex;
+            saveState(); render();
+        }
+
+        function handleImageDrop(e, index) {
+            e.preventDefault(); e.stopPropagation();
+            if (state.pageList[index].locked) { showToast("Pagina is vergrendeld", true); return; }
+            document.getElementById(`page-${index}`).classList.remove('file-drag-over');
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                const file = files[0];
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const base64 = event.target.result;
+                        if (base64.length > 2000000) { showToast("Afbeelding te groot", true); return; }
+                        state.pageList[index].image = base64; saveState(); render();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            } else handleDrop(e, index);
+        }
+        
+        function removeImage(index) {
+            if (state.pageList[index].locked) { showToast("Pagina is vergrendeld", true); return; }
+            if(confirm("Afbeelding verwijderen?")) { state.pageList[index].image = null; saveState(); render(); }
+        }
+
+        function toggleSelectionMode() {
+            closeAllPopovers();
+            isSelectionMode = !isSelectionMode; selectedIndices.clear();
+            const btn = document.getElementById('selectModeBtn');
+            const actions = document.getElementById('selectionActions');
+            const main = document.getElementById('mainArea');
+            if (isSelectionMode) {
+                btn.classList.add('bg-indigo-100', 'text-indigo-700', 'border-indigo-400');
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Klaar';
+                main.classList.add('mode-selecting'); actions.classList.remove('hidden');
+            } else {
+                btn.classList.remove('bg-indigo-100', 'text-indigo-700', 'border-indigo-400');
+                btn.innerHTML = '<i class="fa-regular fa-square-check"></i> Selecteren';
+                main.classList.remove('mode-selecting'); actions.classList.add('hidden');
+            }
+            render(); updateSelectionUI();
+        }
+
+        function handlePageClick(index) {
+            if (!isSelectionMode) return;
+            if (state.pageList[index].locked) { showToast("Kan vergrendelde pagina niet selecteren", true); return; }
+            if (selectedIndices.has(index)) selectedIndices.delete(index); else selectedIndices.add(index);
+            render(); updateSelectionUI();
+        }
+
+        function updateSelectionUI() { document.getElementById('selectionCount').innerText = `${selectedIndices.size} geselecteerd`; }
+
+        function groupSelected() {
+            // Updated logic: Allow single page selection for grouping (creating a single page article)
+            if (selectedIndices.size === 0) { showToast("Selecteer minstens 1 pagina", true); return; }
+            const groupId = 'g-' + Date.now();
+            const firstIndex = Array.from(selectedIndices).sort((a, b) => a - b)[0];
+            const groupColor = state.pageList[firstIndex].groupColor || GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
+            const masterContent = state.pageList[firstIndex].content; 
+            const masterColor = state.pageList[firstIndex].color;
+            const masterRubriek = state.pageList[firstIndex].groupRubriek; 
+
+            Array.from(selectedIndices).forEach(idx => {
+                state.pageList[idx].groupId = groupId; state.pageList[idx].groupColor = groupColor;
+                state.pageList[idx].groupRubriek = masterRubriek; state.pageList[idx].content = masterContent; 
+                state.pageList[idx].color = masterColor; 
+            });
+            toggleSelectionMode(); saveState();
+        }
+
+        function ungroupSelected() {
+            if (selectedIndices.size === 0) return;
+            selectedIndices.forEach(idx => { 
+                state.pageList[idx].groupId = null; state.pageList[idx].groupColor = GROUP_COLORS[0]; 
+                state.pageList[idx].groupRubriek = ''; 
+            });
+            toggleSelectionMode(); saveState();
+        }
+
+        function handleDragStart(e, index) {
+            if (isSelectionMode) { e.preventDefault(); return; }
+            if (state.pageList[index].locked) { 
+                e.preventDefault(); 
+                return; 
+            }
+            draggedIndex = index; e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', index);
+            setTimeout(() => document.getElementById(`page-${index}`).classList.add('dragging'), 0);
+        }
+
+        function handleDragEnd(e) {
+            document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+            document.querySelectorAll('.drop-before').forEach(el => el.classList.remove('drop-before'));
+            document.querySelectorAll('.drop-after').forEach(el => el.classList.remove('drop-after'));
+            document.querySelectorAll('.file-drag-over').forEach(el => el.classList.remove('file-drag-over'));
+            draggedIndex = null; dropTargetIndex = null; dropPosition = null;
+        }
+
+        function handleDragOver(e, index) {
+            e.preventDefault();
+            if (e.dataTransfer.types.includes("Files")) { document.getElementById(`page-${index}`).classList.add('file-drag-over'); return; }
+            if (draggedIndex === null || draggedIndex === index) return;
+            const targetEl = document.getElementById(`page-${index}`);
+            const rect = targetEl.getBoundingClientRect();
+            const isAfter = e.clientX > (rect.x + rect.width / 2);
+            if (dropTargetIndex !== index || dropPosition !== (isAfter ? 'after' : 'before')) {
+                document.querySelectorAll('.drop-before').forEach(el => el.classList.remove('drop-before'));
+                document.querySelectorAll('.drop-after').forEach(el => el.classList.remove('drop-after'));
+                dropTargetIndex = index; dropPosition = isAfter ? 'after' : 'before';
+                if (isAfter) targetEl.classList.add('drop-after'); else targetEl.classList.add('drop-before');
+            }
+        }
+        
+        function handleDragLeave(e, index) { document.getElementById(`page-${index}`).classList.remove('file-drag-over'); }
+
+        function handleDrop(e, targetIndex) {
+            e.preventDefault(); clearDropMarkers(); 
+            if (e.dataTransfer.files.length > 0) return; 
+            if (draggedIndex === null || draggedIndex === targetIndex) return;
+            
+            // 1. Identify Items
+            const draggedPage = state.pageList[draggedIndex];
+            
+            // Prevent dragging locked items (extra safety, though UI prevents start)
+            if(draggedPage.locked) return;
+
+            let itemsToMove = [];
+            if (draggedPage.groupId) {
+                itemsToMove = state.pageList.filter(p => p.groupId === draggedPage.groupId);
+            } else {
+                itemsToMove = [draggedPage];
+            }
+            
+            // 2. Identify Locked Slots & Mobile Items
+            const lockedMap = new Map(); // index -> page
+            const mobileItems = [];
+            
+            state.pageList.forEach((p, i) => {
+                if (p.locked) {
+                    lockedMap.set(i, p);
+                } else if (!itemsToMove.some(m => m.id === p.id)) {
+                    mobileItems.push(p);
+                }
+            });
+
+            // 3. Determine Insertion Point in Mobile Stream
+            let insertMobileIndex = 0;
+            let currentMobileCounter = 0;
+            
+            // Loop through original positions to find where the drop fits relative to MOBILE items
+            for(let i=0; i<state.pageList.length; i++) {
+                const p = state.pageList[i];
+                const isMoving = itemsToMove.some(m => m.id === p.id);
+                const isLocked = p.locked;
+                const isMobile = !isMoving && !isLocked;
+
+                if (i === targetIndex) {
+                    // Found the Drop Target
+                    if (dropPosition === 'before') {
+                        insertMobileIndex = currentMobileCounter;
+                    } else { // after
+                        // If dropping after a mobile item, we step forward.
+                        // If dropping after a locked item, we stay at current mobile pointer (insert before next mobile)
+                        insertMobileIndex = isMobile ? currentMobileCounter + 1 : currentMobileCounter;
+                    }
+                }
+                
+                if (isMobile) currentMobileCounter++;
+            }
+            
+            // Clamp index
+            if (insertMobileIndex < 0) insertMobileIndex = 0;
+            if (insertMobileIndex > mobileItems.length) insertMobileIndex = mobileItems.length;
+
+            // 4. Insert Moving Items into Mobile List
+            mobileItems.splice(insertMobileIndex, 0, ...itemsToMove);
+
+            // 5. Reconstruct State List
+            const newList = new Array(state.pageList.length).fill(null);
+            
+            // Place Locked Items
+            lockedMap.forEach((p, idx) => {
+                if(idx < newList.length) newList[idx] = p;
+            });
+            
+            // Fill gaps with Mobile Items
+            let mobIdx = 0;
+            for(let i=0; i<newList.length; i++) {
+                if (!newList[i]) {
+                    if (mobIdx < mobileItems.length) {
+                        newList[i] = mobileItems[mobIdx++];
+                    }
+                }
+            }
+            
+            state.pageList = newList.filter(p => p !== null); // Filter nulls just in case
+            
+            saveState(); render(); handleDragEnd(e);
+        }
+        
+        function clearDropMarkers() {
+             document.querySelectorAll('.drop-before').forEach(el => el.classList.remove('drop-before'));
+             document.querySelectorAll('.drop-after').forEach(el => el.classList.remove('drop-after'));
+             document.querySelectorAll('.file-drag-over').forEach(el => el.classList.remove('file-drag-over'));
+        }
+
+        function handleAutoScroll(e) {
+            if (draggedIndex === null) return;
+            const main = document.getElementById('mainArea');
+            const threshold = 120; const speed = 15;
+            const rect = main.getBoundingClientRect();
+            if (e.clientY < rect.top + threshold) main.scrollTop -= speed;
+            else if (e.clientY > rect.bottom - threshold) main.scrollTop += speed;
+        }
+
+        function updateContent(index, text) {
+            if (state.pageList[index].locked) return;
+            const page = state.pageList[index];
+            if (page.groupId) {
+                state.pageList.forEach((p, idx) => {
+                    if (p.groupId === page.groupId) {
+                        p.content = text; 
+                        if (idx !== index) { const el = document.querySelector(`#page-${idx} textarea.page-input`); if(el) el.value = text; }
+                    }
+                });
+            } else page.content = text; 
+            saveState();
+        }
+
+        function updateRubriek(index, text) {
+            if (state.pageList[index].locked) return;
+            const page = state.pageList[index];
+            if (page.groupId) {
+                state.pageList.forEach((p, idx) => {
+                    if (p.groupId === page.groupId) {
+                        p.groupRubriek = text; 
+                        if (idx !== index) { const el = document.querySelector(`#page-${idx} input.rubriek-input`); if(el) el.value = text; }
+                    }
+                });
+            } else page.groupRubriek = text; 
+            saveState();
+        }
+        
+        // --- Import ---
+        function importArticleList(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (json.length === 0) { showToast("Bestand is leeg.", true); input.value = ''; return; }
+                if (!confirm("Huidige flatplan wissen en artikellijst importeren? (Cover wordt behouden)")) { input.value = ''; return; }
+
+                // Keep Cover Logic
+                let existingCover = state.pageList.length > 0 ? state.pageList[0] : { 
+                    id: 'p-cover', color: '#4ade80', content: 'COVER', groupId: null, 
+                    groupColor: GROUP_COLORS[0], image: null, pageType: 'standard', groupRubriek: ''
+                };
+                if (!existingCover.content) existingCover.content = 'COVER';
+                if (!existingCover.color || existingCover.color === 'transparent') existingCover.color = '#4ade80';
+
+                let newPageList = [existingCover];
+                let currentGroupColorIndex = 0;
+
+                for (let i = 1; i < json.length; i++) {
+                    const row = json[i];
+                    const rubriek = String(row[0] || '').trim();
+                    const title = String(row[1] || '').trim();
+                    const pages = parseInt(row[2]) || 0;
+
+                    if (pages > 0 && title) {
+                        const groupId = 'g-' + Date.now() + i;
+                        const groupColor = GROUP_COLORS[currentGroupColorIndex % GROUP_COLORS.length];
+                        currentGroupColorIndex++;
+
+                        for (let p = 0; p < pages; p++) {
+                            newPageList.push({
+                                id: 'p' + Date.now() + Math.random(), color: 'transparent', content: title, 
+                                groupId: groupId, groupColor: groupColor, groupRubriek: rubriek, image: null, pageType: 'standard', locked: false
+                            });
+                        }
+                    }
+                }
+                
+                const currentTotal = parseInt(document.getElementById('pageCountInput').value);
+                const requiredPadding = Math.max(0, currentTotal - newPageList.length);
+
+                for (let i = 0; i < requiredPadding; i++) {
+                    newPageList.push({
+                        id: 'p' + Date.now() + Math.random() + i, color: 'transparent', content: '', groupId: null, groupColor: GROUP_COLORS[0], image: null, pageType: 'standard', groupRubriek: '', locked: false
+                    });
+                }
+
+                state.pageList = newPageList;
+                document.getElementById('pageCountInput').value = state.pageList.length;
+                saveState(); render(); showToast("Artikellijst succesvol geïmporteerd! (Cover behouden)");
+            };
+            reader.readAsArrayBuffer(file);
+            input.value = '';
+        }
+        
+        function updatePageCount() {
+            const val = parseInt(document.getElementById('pageCountInput').value);
+            if (val && val > 0) { generatePages(val); render(); }
+        }
+        
+        function resetPlan() {
+            if(confirm("Alles wissen?")) { state.pageList = []; generatePages(parseInt(document.getElementById('pageCountInput').value) || 116); render(); }
+        }
+
+        // --- Main Render ---
+        function render() {
+            closeAllPopovers();
+            const container = document.getElementById('flatplanContainer');
+            container.innerHTML = '';
+            let html = '';
+            const total = state.pageList.length;
+
+            const createCard = (index) => {
+                const page = state.pageList[index];
+                const pageNum = index + 1;
+                const isSelected = selectedIndices.has(index);
+                const pageColor = page.color || 'transparent';
+                const isLocked = page.locked || false; 
+                
+                let searchMatchClass = '';
+                if (currentSearchTerm) {
+                    const content = (page.content || '').toLowerCase() + (page.groupRubriek || '').toLowerCase();
+                    if (content.includes(currentSearchTerm) || pageNum.toString().includes(currentSearchTerm)) searchMatchClass = 'search-match';
+                }
+                
+                const rubriekInput = page.groupId ? 
+                    `<input oninput="updateRubriek(${index}, this.value)" class="rubriek-input" placeholder="Rubriek..." value="${page.groupRubriek || ''}" ${isSelectionMode || isLocked ? 'disabled' : ''}>` : '';
+                
+                const rubriekColorPicker = page.groupId ? `
+                    <div class="rubriek-color-picker-wrapper">
+                        <div class="icon-btn rounded-none h-[18px] w-[24px] shadow-none border-none flex-shrink-0 ${isLocked ? 'disabled' : ''}" 
+                            onclick="${isLocked ? '' : `toggleRubriekColorPopover(${index}, event)`}" 
+                            style="background-color: ${page.groupColor || '#fff'}; color: #000; padding: 0; cursor: pointer; margin-right: -1px;" title="Kies rubriekskleur">
+                            <i class="fa-solid fa-palette text-xs" style="color: ${page.groupColor === '#000000' ? '#fff' : '#000'};"></i>
+                        </div>
+                    </div>` : '';
+
+                const groupBar = page.groupId ? 
+                    `<div class="article-bar" style="background-color: ${page.groupColor || GROUP_COLORS[0]};">${rubriekInput}${rubriekColorPicker}</div>` : '';
+                    
+                const selectionOverlay = `<div class="selection-overlay absolute inset-0 z-30 bg-indigo-900/20 items-center justify-center rounded-sm transition-opacity" onclick="handlePageClick(${index})"><div class="check-icon w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center shadow-lg text-white"><i class="fa-solid fa-check"></i></div></div>`;
+                const imageEl = page.image ? `<div class="page-image-container"><img src="${page.image}" alt="Page Thumbnail"></div>` : '';
+                
+                let typeEl = '';
+                if (page.pageType === 'ad') typeEl = '<div class="page-type-letter indicator-a">A</div>';
+                if (page.pageType === 'werf') typeEl = '<div class="page-type-letter indicator-w">W</div>';
+                
+                // Lock Badge
+                const lockBadge = isLocked ? `<div class="locked-badge"><i class="fa-solid fa-lock text-[8px]"></i></div>` : '';
+                
+                let footerControls = `
+                    <div class="card-footer-controls">
+                        <div class="flex gap-1">
+                            <div class="icon-btn ${page.pageType === 'ad' ? 'active' : ''} ${isLocked ? 'disabled' : ''}" onclick="setPageType(${index}, 'ad')" title="Advertentie">A</div>
+                            <div class="icon-btn ${page.pageType === 'werf' ? 'active' : ''} ${isLocked ? 'disabled' : ''}" onclick="setPageType(${index}, 'werf')" title="Werf">W</div>
+                            ${page.image ? `<div class="icon-btn text-red-500 ${isLocked ? 'disabled' : ''}" onclick="removeImage(${index})" title="Afbeelding verwijderen"><i class="fa-solid fa-times"></i></div>` : ''}
+                        </div>
+                        <div class="footer-btn-wrapper color-picker-wrapper z-[3000]">
+                             <div class="icon-btn ${isLocked ? 'disabled' : ''}" onclick="toggleColorPopover(${index}, event)" title="Kies paginakleur">
+                                <i class="fa-solid fa-palette" style="color: ${pageColor !== 'transparent' && pageColor !== '#ffffff' ? pageColor : '#64748b'}"></i>
+                             </div>
+                        </div>
+                        <div class="flex gap-1 z-[3000]">
+                             <div class="icon-btn ${isLocked ? 'locked' : ''}" onclick="toggleLock(${index})" title="${isLocked ? 'Pagina ontgrendelen' : 'Pagina vergrendelen'}">
+                                <i class="fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'}"></i>
+                             </div>
+                             <div class="icon-btn hover:text-red-600 hover:border-red-300 ${isLocked ? 'disabled' : ''}" onclick="toggleDeletePopover(${index}, event)" title="Wissen">
+                                <i class="fa-solid fa-trash-can"></i>
+                             </div>
+                        </div>
+                    </div>`;
+
+                return `
+                    <div class="relative group flex flex-col items-center">
+                        <span class="page-num-label text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono mb-1 drop-shadow-sm">${pageNum}</span>
+                        <div id="page-${index}" draggable="${!isSelectionMode && !isLocked}" ondragstart="handleDragStart(event, ${index})" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event, ${index})" ondragleave="handleDragLeave(event, ${index})" ondrop="handleImageDrop(event, ${index})"
+                            class="page-card ${isSelected ? 'is-selected' : ''} ${isLocked ? 'is-locked' : ''} ${searchMatchClass} border rounded-sm shadow-md flex flex-col relative bg-white">
+                            ${groupBar}
+                            ${lockBadge}
+                            <div class="card-content-mask">
+                                ${isSelectionMode ? selectionOverlay : ''} ${imageEl} ${typeEl}
+                                <div class="page-color-overlay" style="background-color: ${pageColor};"></div>
+                                <div class="w-full h-full flex items-center justify-center relative z-10 pointer-events-none">
+                                    <textarea oninput="updateContent(${index}, this.value)" class="page-input" placeholder="${index===0 ? 'COVER' : '...'}" ${isSelectionMode || isLocked ? 'disabled' : ''}>${page.content}</textarea>
+                                </div>
+                            </div>
+                            ${footerControls} 
+                        </div>
+                    </div>`;
+            };
+
+            if (total > 0) {
+                // Modified: restored ghost-page class, removed opacity-0/pointer-events-none to make it visible on screen again
+                html += `<div class="spread-container flex gap-0.5 mb-6 mx-4 items-end"><div class="ghost-page" style="visibility: hidden"></div><div class="spine-shadow opacity-0"></div>${createCard(0)}</div><div class="w-full hidden print:hidden"></div>`;
+            }
+            for (let i = 1; i < total; i += 2) {
+                const leftIdx = i; const rightIdx = i + 1; const hasRight = rightIdx < total;
+                // Modified: added style="visibility: hidden" to the Einde ghost page so it takes space but is invisible
+                html += `<div class="spread-container flex gap-0 mb-6 mx-4 group/spread hover:scale-[1.01] transition-transform duration-300 items-end">${createCard(leftIdx)}<div class="spine-shadow z-10 relative -mx-[1px]"></div>${hasRight ? createCard(rightIdx) : '<div class="ghost-page" style="visibility: hidden">Einde</div>'}</div>`;
+            }
+            container.innerHTML = html;
+            document.getElementById('magTitle').oninput = () => saveState();
+        }
+
+        init();
+    </script>
+</body>
+</html>
