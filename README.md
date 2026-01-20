@@ -1,28 +1,28 @@
-# Magazine Flatplan Tool
+# Plankie
 
 Een interactieve, web-based tool voor het visueel indelen van tijdschriften en magazines. Deze applicatie draait volledig in de browser en maakt het mogelijk om via 'drag & drop' snel een bladformule neer te zetten, pagina's te schuiven en de voortgang te bewaken.
 
 De tool is ontworpen om direct bruikbaar te zijn zonder installatie van zware software of databases. Alle data wordt lokaal in de browser opgeslagen, waardoor je privacy gewaarborgd blijft.
 
-## Belangrijkste Functies
+## Belangrijkste functies
 
-### 1. Visueel Grid & Drag-and-Drop
+### 1. Visueel grid & drag-and-drop
 Het hart van de tool is een visueel overzicht van alle spreads. Je kunt pagina's eenvoudig verslepen om de volgorde aan te passen. De logica houdt rekening met spreads (linker- en rechterpagina's) en zorgt dat de rug van het blad altijd correct wordt weergegeven.
 
-### 2. Slimme Vergrendeling (Lock & Flow)
+### 2. Slimme vergrendeling (Lock & Flow)
 Pagina's of hele artikelen kunnen worden vergrendeld via het slot-icoontje. 
-* **Vaste Rotsen:** Een vergrendelde pagina blijft altijd op dat specifieke paginanummer staan (bijvoorbeeld een vaste advertentie op pagina 4).
+* **Vaste rotsen:** Een vergrendelde pagina blijft altijd op dat specifieke paginanummer staan (bijvoorbeeld een vaste advertentie op pagina 4).
 * **Waterstroom:** Wanneer je niet-vergrendelde pagina's verplaatst of toevoegt, 'stromen' deze automatisch om de vergrendelde pagina's heen. Hierdoor blijft je vaste stramien intact terwijl je met de redactionele inhoud schuift.
 * **Groeps-lock:** Klik je op het slotje van een pagina die deel uitmaakt van een artikelgroep? Dan wordt direct het hele artikel vergrendeld of ontgrendeld.
 
-### 3. Groeperen & Kleuren
+### 3. Groeperen & kleuren
 Je kunt meerdere pagina's selecteren en groeperen tot één artikel. Deze krijgen automatisch een gedeelde kleur en titel. Dit maakt het in één oogopslag duidelijk waar een artikel begint en eindigt. Ook kun je handmatig kleuren toekennen aan pagina's of rubrieken voor een beter overzicht.
 
-### 4. Import & Export
-* **Excel Export:** Genereer met één klik een visueel Excel-bestand (`.xlsx`). De bestandsnaam wordt automatisch gegenereerd als `Plank_[Titel]_[Datum]`.
-* **Excel Import:** Importeer een artikellijst om direct een basisplan te genereren.
-* **Backups:** Je kunt de volledige staat van je flatplan opslaan als een `.json` bestand en dit later weer inladen.
-* **PDF/Print:** De tool is geoptimaliseerd voor print naar A4, zodat je een fysieke versie van het plankje kunt uitdraaien voor overleg.
+### 4. Import & export
+* **Excel-export:** Genereer met één klik een visueel Excel-bestand (`.xlsx`). De bestandsnaam wordt automatisch gegenereerd als `Plank_[Titel]_[Datum]`.
+* **Excel-import:** Importeer een artikellijst om direct een basisplan te genereren.
+* **Back-ups:** Je kunt de volledige staat van je flatplan opslaan als een `.json` bestand en dit later weer inladen.
+* **PDF/print:** De tool is geoptimaliseerd voor print naar A4, zodat je een fysieke versie van het plankje kunt uitdraaien voor overleg.
 
 ## Hoe te gebruiken
 
@@ -55,5 +55,5 @@ Bezoek de [GitHub Pages URL van dit project] om de tool direct te gebruiken in j
 **v1.7**
 * Introductie van de visuele lock-functie en placeholders.
 
-## Privacy & Data
+## Privacy & data
 Deze applicatie is 'client-side'. Dit betekent dat er geen gegevens naar een server worden verstuurd. Alles wat je invult, wordt opgeslagen in de `localStorage` van je eigen browser. Als je je browsergegevens wist, wordt het flatplan ook gewist. Maak daarom regelmatig een backup via de export-functie.
