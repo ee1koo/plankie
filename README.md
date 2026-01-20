@@ -27,7 +27,7 @@ Je kunt meerdere pagina's selecteren en groeperen tot één artikel. Deze krijge
 ## Hoe te gebruiken
 
 ### Online (GitHub Pages)
-Bezoek de [GitHub Pages URL van dit project] om de tool direct te gebruiken in je browser.
+Bezoek de [GitHub Pages URL van dit project](https://ee1koo.github.io/plankie/) om de tool direct te gebruiken in je browser.
 
 ### Lokaal
 1.  Download het bestand `index.html` uit deze repository.
