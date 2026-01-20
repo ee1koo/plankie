@@ -20,7 +20,7 @@ Je kunt meerdere pagina's selecteren en groeperen tot één artikel. Deze krijge
 
 ### 4. Import & export
 * **Excel-export:** Genereer met één klik een visueel Excel-bestand (`.xlsx`). De bestandsnaam wordt automatisch gegenereerd als `Plank_[Titel]_[Datum]`.
-* **Excel-import:** Importeer een artikellijst om direct een basisplan te genereren.
+* **Excel-import:** Importeer een artikellijst om direct een basisplan te genereren. Dit bestand moet drie kolommen bevatten met in kolom 1 de rubrieksnaam, in kolom 2 de artikelnaam en in kolom 3 het aantal pagina's dat je voor het artikel wilt reserveren.
 * **Back-ups:** Je kunt de volledige staat van je flatplan opslaan als een `.json` bestand en dit later weer inladen.
 * **PDF/print:** De tool is geoptimaliseerd voor print naar A4, zodat je een fysieke versie van het plankje kunt uitdraaien voor overleg.
 
