@@ -43,6 +43,9 @@ Bezoek de [GitHub Pages URL van dit project](https://ee1koo.github.io/plankie/) 
 
 ## Versiegeschiedenis
 
+**v1.11**
+* PDF-export bestandsnaam aangepast: bij het printen naar PDF wordt nu automatisch de bestandsnaam `Plank_[Naam]_[Datum]` voorgesteld, in plaats van de standaard paginatitel.
+
 **v1.10**
 * Excel-export bestandsnaam aangepast naar formaat `Plank_[Naam]_[Datum]`.
 
